@@ -91,15 +91,10 @@ class SupplyChainNLP:
           
         return 0.2
 
-# ==========================================
-# 🚀 SHAKTHI NLP ENGINE: RIGOROUS QA SUITE
-# ==========================================
 if __name__ == "__main__":
     nlp = SupplyChainNLP()
     
-    print("\n==========================================")
-    print("🚀 SHAKTHI NLP ENGINE: CONTRASTIVE QA SUITE")
-    print("==========================================\n")
+    print("Test cases:")
 
     test_cases = [
         (
