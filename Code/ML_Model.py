@@ -11,7 +11,6 @@ import joblib
 print("--- Loading Data ---")
 df = pd.read_csv('Super_Supply_Chain_Data_Fixed.csv',encoding='latin1')
 
-# Drop the missing Transport_Mode rows as we agreed
 df = df.dropna(subset=['Transport_Mode'])
 print(f"Data ready. Total rows: {df.shape[0]}")
 
