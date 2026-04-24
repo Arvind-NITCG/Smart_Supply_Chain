@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+networkx
+scikit-learn
+pandas
+numpy
+websockets
