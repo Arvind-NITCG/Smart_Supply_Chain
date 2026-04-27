@@ -1,117 +1,173 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Query
+from pydantic import BaseModel
+from typing import Optional, List
 import asyncio
 import json
 import random
+import os
 from contextlib import asynccontextmanager
 
 from .engine.graph_model import create_logistics_network
 from .engine.simulator import LogisticsSimulator
-from .engine.ml_predictor import DelayPredictor
-from .engine.optimizer import RouteOptimizer
+from .engine.threat_intelligence import ThreatIntelligencePredictor
 from .engine.baseline import BaselineRouter
+from .engine.weather_integration import APIWeatherProvider
+from .engine.multimodal_network import create_multimodal_network, get_city_capabilities, load_canonical_hubs
+from .engine.route_recommender import RouteRecommender
+from .engine.scenario_manager import ScenarioManager
+from .engine.supplier_scorer import SupplierScorer
 
 # Global Engine State
-network = create_logistics_network()
-simulator = LogisticsSimulator(network)
-predictor = DelayPredictor()
+network = create_logistics_network() # Still US-only simulator
+simulator = LogisticsSimulator(network, weather_provider=APIWeatherProvider())
+predictor = ThreatIntelligencePredictor() 
 baseline = BaselineRouter(network)
-optimizer = RouteOptimizer(network, predictor, simulator)
 
-class PreTrainingTask:
-    is_running = False
-    is_done = False
+# Product layer (Supplychainer Architecture) - Now using Canonical Hubs
+multimodal_net = create_multimodal_network()
+scenario_mgr = ScenarioManager()
+DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
+recommender = RouteRecommender(multimodal_net, predictor, simulator, scenario_mgr, demo_mode=DEMO_MODE)
+canonical_hubs = load_canonical_hubs()
+supplier_scorer = SupplierScorer(os.path.join(os.path.dirname(__file__), 'data', 'suppliers.json'))
 
-async def run_pre_training_async():
-    PreTrainingTask.is_running = True
-    print("Running background pre-training...")
-    nodes = list(network.nodes())
-    for _ in range(1500):
-        if random.random() < 0.5:
-            src = random.choice(nodes)
-            dst = random.choice(nodes)
-            if src != dst:
-                route = baseline.get_route(src, dst)
-                if route:
-                    simulator.dispatch_truck(src, dst, route["route"])
-        simulator.step()
-        await asyncio.sleep(0.0) # Yield control
-        
-    df = simulator.get_trip_dataframe()
-    if len(df['is_delayed'].unique()) == 1:
-        # Force a tiny bit of variance for the demo
-        if len(df) > 5:
-            df.loc[0, 'is_delayed'] = 1 - df.loc[0, 'is_delayed']
-            df.loc[1, 'is_delayed'] = 1 - df.loc[1, 'is_delayed']
-            
-    predictor.train(df)
-    PreTrainingTask.is_running = False
-    PreTrainingTask.is_done = True
-    print("Pre-training complete.")
+
+class RecommendRequest(BaseModel):
+    source: str # This should be a Canonical Hub ID or City Name
+    destination: str # This should be a Canonical Hub ID or City Name
+    cargo_type: str = "general"
+    priority: str = "normal"
+    budget_sensitivity: str = "medium"
+    transport_preference: str = "any" # sea, air, rail, road, any
+    routing_policy: str = "STRICT" # STRICT or PREFERRED
+    scenario: Optional[str] = None
+    overrides: Optional[dict] = None
+
+class SourcingRequest(BaseModel):
+    category: str = "Electronics"
+    current_inventory: int = 1000
+    safety_stock: int = 1500
+    demand_forecast: int = 800
+    scenario: Optional[str] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup logic
-    asyncio.create_task(run_pre_training_async())
+    print("Supplychainer Engine Active: Canonical Global Registry Loaded.")
+    if not DEMO_MODE:
+        asyncio.create_task(asyncio.to_thread(recommender.run_background_warmup))
     yield
-    # Shutdown logic
 
 app = FastAPI(title="Smart Supply Chain API", lifespan=lifespan)
+
+@app.get("/api/scenarios")
+def get_scenarios():
+    """Returns available disruption scenarios."""
+    return scenario_mgr.get_all_scenarios()
+
+@app.get("/api/hubs")
+def get_hubs():
+    """Returns the full canonical hub registry."""
+    return canonical_hubs
+
+@app.get("/api/hubs/search")
+def search_hubs(q: str = Query(..., min_length=1)):
+    """Search hubs by display_name, aliases, or country."""
+    q = q.lower()
+    results = []
+    for hub in canonical_hubs:
+        if (q in hub["display_name"].lower() or 
+            any(q in a.lower() for a in hub["aliases"]) or 
+            q in hub["country"].lower() or
+            q in hub["id"].lower()):
+            results.append(hub)
+    return results
 
 @app.get("/api/network")
 def get_network():
     nodes = []
-    for n, data in network.nodes(data=True):
-        nodes.append({"id": n, "region": data.get("region"), "capacity": data.get("warehouse_capacity")})
+    for n, data in multimodal_net.nodes(data=True):
+        nodes.append({"id": n, "display_name": data.get("display_name"), "type": data.get("type")})
     
     edges = []
-    for u, v, data in network.edges(data=True):
-        edges.append({"source": u, "target": v, "baseline_time": data.get("baseline_time")})
+    seen = set()
+    for u, v, data in multimodal_net.edges(data=True):
+        edge_key = tuple(sorted((u, v)))
+        if edge_key not in seen:
+            edges.append({"source": u, "target": v, "baseline_time": data.get("baseline_time")})
+            seen.add(edge_key)
         
     return {"nodes": nodes, "edges": edges}
 
 @app.get("/api/status")
 def get_status():
     return {
-        "ml_trained": predictor.is_trained,
-        "pre_training_running": PreTrainingTask.is_running,
+        "ml_trained": True,
         "active_trips": len(simulator.active_trips),
-        "tick": simulator.time_tick
+        "tick": simulator.time_tick,
+        "is_supplychainer": True,
+        "geo_scope": "Global (Canonical)",
+        "hub_count": len(canonical_hubs)
     }
-
-@app.post("/api/dispatch")
-def dispatch_optimized_truck():
-    if not predictor.is_trained:
-        return {"status": "error", "message": "ML Model not trained yet."}
-        
-    nodes = list(network.nodes())
-    src = random.choice(nodes)
-    dst = random.choice(nodes)
-    while src == dst:
-        dst = random.choice(nodes)
-        
-    decision = optimizer.get_optimized_route(src, dst)
-    if decision:
-        simulator.dispatch_truck(src, dst, decision["optimized_route"])
-        return {"status": "dispatched", "decision": decision}
-    return {"status": "error", "message": "No route found"}
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            # Advance simulation 1 tick per real-time second
-            simulator.step()
-            
+            if recommender.warmup_failed:
+                status_msg = "WARM-UP FAILED"
+            elif not recommender.is_warmed_up:
+                status_msg = "WARMING RISK ENGINE"
+            else:
+                status_msg = "FULLY OPERATIONAL"
+                
             state = {
                 "tick": simulator.time_tick,
-                "active_trips": simulator.active_trips,
-                "ml_trained": predictor.is_trained,
-                "weather_states": [{"edge": [u,v], "severity": s} for (u,v), s in simulator.weather_states.items() if s > 0.1],
-                "traffic_states": [{"edge": [u,v], "severity": s} for (u,v), s in simulator.traffic_states.items() if s > 0.2],
-                "backlog_states": [{"node": n, "severity": s} for n, s in simulator.backlog_states.items() if s > 0.2],
+                "ml_trained": True,
+                "engine_status": status_msg,
+                "hub_registry": "Synchronized"
             }
             await websocket.send_text(json.dumps(state))
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(2.0)
     except Exception as e:
         print(f"WebSocket closed: {e}")
+
+@app.get("/api/cities")
+def get_cities():
+    """Returns the city-to-hub mapping for multimodal resolution."""
+    path = os.path.join(os.path.dirname(__file__), 'data', 'canonical_locations.json')
+    if os.path.exists(path):
+        with open(path, 'r') as f:
+            return json.load(f)
+    return {}
+
+@app.post("/api/recommend")
+def recommend_routes(req: RecommendRequest):
+    result = recommender.recommend(
+        source=req.source,
+        destination=req.destination,
+        cargo_type=req.cargo_type,
+        priority=req.priority,
+        transport_preference=req.transport_preference,
+        routing_policy=req.routing_policy,
+        scenario=req.scenario,
+        overrides=req.overrides
+    )
+    return result
+
+@app.post("/api/suppliers")
+def get_suppliers(req: SourcingRequest):
+    # Get active disruptions from scenario manager
+    active_disruptions = {}
+    if req.scenario:
+        scenario_mgr.activate_scenario(req.scenario)
+        active_disruptions = scenario_mgr.get_active_disruptions()
+    
+    ranked_suppliers = supplier_scorer.get_ranked_suppliers(req.category, active_disruptions)
+    advice = supplier_scorer.get_procurement_advice(req.current_inventory, req.safety_stock, req.demand_forecast)
+    
+    return {
+        "suppliers": ranked_suppliers,
+        "advice": advice,
+        "active_disruptions": active_disruptions
+    }

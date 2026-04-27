@@ -5,6 +5,7 @@ from .simulator import LogisticsSimulator
 from .ml_predictor import DelayPredictor
 from .optimizer import RouteOptimizer
 from .baseline import BaselineRouter
+from .or_baseline import OROptimizer
 
 def run_benchmark():
     network = create_logistics_network()
@@ -28,6 +29,7 @@ def run_benchmark():
     predictor.train(df)
 
     optimizer = RouteOptimizer(network, predictor, sim)
+    or_optimizer = OROptimizer(network, predictor, sim)
     
     print("\nStarting Phase 3 Benchmarking Phase (500 Dispatches)...")
     
@@ -44,8 +46,9 @@ def run_benchmark():
                 dec_agg = optimizer.get_optimized_route(src, dst, strategy="aggressive")
                 dec_con = optimizer.get_optimized_route(src, dst, strategy="conservative")
                 dec_conf = optimizer.get_optimized_route(src, dst, strategy="confidence", alpha=0.5, beta=0.1)
+                dec_or = or_optimizer.get_optimized_route(src, dst)
                 
-                if dec_agg and dec_con and dec_conf:
+                if dec_agg and dec_con and dec_conf and dec_or:
                     pair_id = pair_id_counter
                     pair_id_counter += 1
                     
@@ -65,14 +68,20 @@ def run_benchmark():
                     sim.dispatch_truck(src, dst, dec_conf["optimized_route"])
                     trip_d_id = sim.active_trips[-1]["trip_id"]
                     
+                    # Dispatch Truck E (OR-Tools Baseline)
+                    sim.dispatch_truck(src, dst, dec_or["optimized_route"])
+                    trip_e_id = sim.active_trips[-1]["trip_id"]
+                    
                     active_pairs[pair_id] = {
                         "trip_a_id": trip_a_id,
                         "trip_b_id": trip_b_id,
                         "trip_c_id": trip_c_id,
                         "trip_d_id": trip_d_id,
+                        "trip_e_id": trip_e_id,
                         "dec_agg": dec_agg,
                         "dec_con": dec_con,
                         "dec_conf": dec_conf,
+                        "dec_or": dec_or,
                         "src": src,
                         "dst": dst
                     }
@@ -88,12 +97,14 @@ def run_benchmark():
             if (pdata["trip_a_id"] in completed_ids and 
                 pdata["trip_b_id"] in completed_ids and 
                 pdata["trip_c_id"] in completed_ids and
-                pdata["trip_d_id"] in completed_ids):
+                pdata["trip_d_id"] in completed_ids and
+                pdata["trip_e_id"] in completed_ids):
                 
                 t_a = next(t for t in sim.completed_trips if t["trip_id"] == pdata["trip_a_id"])
                 t_b = next(t for t in sim.completed_trips if t["trip_id"] == pdata["trip_b_id"])
                 t_c = next(t for t in sim.completed_trips if t["trip_id"] == pdata["trip_c_id"])
                 t_d = next(t for t in sim.completed_trips if t["trip_id"] == pdata["trip_d_id"])
+                t_e = next(t for t in sim.completed_trips if t["trip_id"] == pdata["trip_e_id"])
                 
                 benchmark_results.append({
                     "src": pdata["src"],
@@ -101,6 +112,7 @@ def run_benchmark():
                     "dec_agg": pdata["dec_agg"],
                     "dec_con": pdata["dec_con"],
                     "dec_conf": pdata["dec_conf"],
+                    "dec_or": pdata["dec_or"],
                     "time_a": t_a["actual_time_taken"],
                     "cost_a": pdata["dec_agg"]["baseline_cost"],
                     "time_b": t_b["actual_time_taken"],
@@ -108,7 +120,9 @@ def run_benchmark():
                     "time_c": t_c["actual_time_taken"],
                     "cost_c": pdata["dec_con"]["optimized_cost"],
                     "time_d": t_d["actual_time_taken"],
-                    "cost_d": pdata["dec_conf"]["optimized_cost"]
+                    "cost_d": pdata["dec_conf"]["optimized_cost"],
+                    "time_e": t_e["actual_time_taken"],
+                    "cost_e": pdata["dec_or"]["optimized_cost"]
                 })
                 pairs_to_remove.append(pid)
                 
@@ -119,7 +133,7 @@ def run_benchmark():
     total_trips = len(benchmark_results)
     
     # We will analyze all cases where ANY strategy intervened
-    intervention_cases = [r for r in benchmark_results if r["dec_agg"]["is_rerouted"] or r["dec_con"]["is_rerouted"] or r["dec_conf"]["is_rerouted"]]
+    intervention_cases = [r for r in benchmark_results if r["dec_agg"]["is_rerouted"] or r["dec_con"]["is_rerouted"] or r["dec_conf"]["is_rerouted"] or r["dec_or"]["is_rerouted"]]
     
     if not intervention_cases:
         print("No interventions triggered across 500 trips.")
@@ -145,8 +159,9 @@ def run_benchmark():
     agg_stats = compute_stats([r["time_b"] for r in intervention_cases], [r["cost_b"] for r in intervention_cases], "dec_agg")
     con_stats = compute_stats([r["time_c"] for r in intervention_cases], [r["cost_c"] for r in intervention_cases], "dec_con")
     cnf_stats = compute_stats([r["time_d"] for r in intervention_cases], [r["cost_d"] for r in intervention_cases], "dec_conf")
+    or_stats = compute_stats([r["time_e"] for r in intervention_cases], [r["cost_e"] for r in intervention_cases], "dec_or")
     
-    print(f"\n--- 4-WAY PERFORMANCE EVALUATION (OVER {len(intervention_cases)} INTERVENTIONS) ---")
+    print(f"\n--- 5-WAY PERFORMANCE EVALUATION (OVER {len(intervention_cases)} INTERVENTIONS) ---")
     
     print("\n[B] AGGRESSIVE OPTIMIZER")
     print(f"Reroutes: {agg_stats[0]}")
@@ -168,6 +183,13 @@ def run_benchmark():
     print(f"Success Rate: {cnf_stats[2]:.1f}%")
     print(f"Worse than baseline: {cnf_stats[3]}")
     print(f"Avg Cost Increase: {cnf_stats[4]:.1f}%")
+
+    print("\n[E] OR-TOOLS BASELINE")
+    print(f"Reroutes: {or_stats[0]}")
+    print(f"Net Delay Reduction: {or_stats[1]:.1f}%")
+    print(f"Success Rate: {or_stats[2]:.1f}%")
+    print(f"Worse than baseline: {or_stats[3]}")
+    print(f"Avg Cost Increase: {or_stats[4]:.1f}%")
     
     # Find a specific failure case for Confidence
     conf_failures = [r for r in intervention_cases if r["time_d"] > r["time_a"] and r["dec_conf"]["is_rerouted"]]
