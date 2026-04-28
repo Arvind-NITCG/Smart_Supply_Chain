@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Shield, AlertTriangle, Clock, TrendingUp, Info, 
-  BarChart3, Package, Truck, Database, Activity, CheckCircle2, ShieldAlert
+  BarChart3, Package, Truck, Database, Activity, CheckCircle2, ShieldAlert, Zap
 } from 'lucide-react';
 
 export default function SupplierIntelligence({ onNavigate }) {
@@ -51,228 +51,104 @@ export default function SupplierIntelligence({ onNavigate }) {
     setLoading(false);
   };
 
-  const getUrgencyColor = (urgency) => {
-    if (urgency === 'CRITICAL') return '#ef4444';
-    if (urgency === 'HIGH') return '#f59e0b';
-    return '#10b981';
-  };
-
   return (
-    <div className="rr-container supply-theme supplier-intelligence">
-      <div className="rr-topbar">
-        <div className="rr-topbar-left">
-          <Database size={22} className="rr-logo-icon" />
-          <h1 className="rr-brand">Supplier Intelligence</h1>
-          <span className="rr-brand-sub">Sourcing Decision Matrix</span>
+    <div className="sc-layout animate-fade-in">
+      <div className="sc-header">
+        <div className="sc-title-group">
+          <h2>
+            <Database color="#8b5cf6" />
+            Supplier Intelligence
+          </h2>
+          <p className="sc-subtitle">Strategic Sourcing Decision Matrix</p>
         </div>
-        <div className="rr-topbar-right">
-          <button className="rr-nav-btn" onClick={() => onNavigate('dashboard')}>Simulator</button>
-          <button className="rr-nav-btn" onClick={() => onNavigate('recommender')}>Route Recommender</button>
+        <div style={{display: 'flex', gap: '1rem'}}>
+          <button className="sc-badge-active" style={{cursor: 'pointer', borderColor: '#8b5cf6', color: '#8b5cf6'}} onClick={() => onNavigate('recommend')}>
+            Route Recommender
+          </button>
         </div>
       </div>
 
-      <div className="rr-main">
-        {/* Left Panel: Inventory & Scenarios */}
-        <div className="rr-form-panel">
-          <h2 className="panel-title">Sourcing Parameters</h2>
-          
-          <div className="supply-input-group">
-            <label>Product Category</label>
-            <select value={category} onChange={e => setCategory(e.target.value)}>
-              <option value="Electronics">Electronics</option>
-              <option value="Raw Materials">Raw Materials</option>
-              <option value="Chemicals">Chemicals</option>
-            </select>
-          </div>
+      <div className="sc-command-panel">
+        <div className="sc-input-group">
+          <label className="sc-label">Product Category</label>
+          <select value={category} onChange={e => setCategory(e.target.value)} className="sc-select">
+            <option value="Electronics">Electronics</option>
+            <option value="Raw Materials">Raw Materials</option>
+            <option value="Chemicals">Chemicals</option>
+          </select>
+        </div>
 
-          <div className="supply-input-group">
-            <label>Current Inventory (Units)</label>
-            <input 
-              type="number" 
-              value={inventory} 
-              onChange={e => setInventory(parseInt(e.target.value))} 
-            />
-          </div>
-
-          <div className="supply-input-group">
-            <label>Safety Stock Target</label>
-            <input 
-              type="number" 
-              value={safetyStock} 
-              onChange={e => setSafetyStock(parseInt(e.target.value))} 
-            />
-          </div>
-
-          <div className="supply-input-group">
-            <label>Demand Forecast (Next Cycle)</label>
-            <input 
-              type="number" 
-              value={forecast} 
-              onChange={e => setForecast(parseInt(e.target.value))} 
-            />
-          </div>
-
-          <div className="intel-section" style={{ marginTop: '2rem' }}>
-            <h3 className="section-title">Active Disruption Context</h3>
-            <div className="scenario-grid">
-              <div 
-                className={`scenario-card ${scenario === null ? 'active' : ''}`}
-                onClick={() => setScenario(null)}
-              >
-                <Shield size={14} />
-                <span>Normal</span>
-              </div>
-              {scenarios.map(s => (
-                <div 
-                  key={s.id} 
-                  className={`scenario-card ${scenario === s.id ? 'active' : ''}`}
-                  onClick={() => setScenario(s.id)}
-                >
-                  <AlertTriangle size={14} />
-                  <span>{s.name}</span>
-                </div>
-              ))}
-            </div>
+        <div className="sc-input-group">
+          <label className="sc-label">Inventory State (Units)</label>
+          <div className="sc-select-grid">
+            <input type="number" value={inventory} onChange={e => setInventory(parseInt(e.target.value))} className="sc-input" style={{paddingLeft: '1rem'}} placeholder="Inventory" />
+            <input type="number" value={safetyStock} onChange={e => setSafetyStock(parseInt(e.target.value))} className="sc-input" style={{paddingLeft: '1rem'}} placeholder="Safety Target" />
           </div>
         </div>
 
-        {/* Center Panel: Supplier List & Rankings */}
-        <div className="rr-results-panel">
-          {advice && (
-            <div className="sourcing-advice-panel" style={{ borderLeftColor: getUrgencyColor(advice.urgency_level) }}>
-              <div className="advice-header">
-                <ShieldAlert size={18} style={{ color: getUrgencyColor(advice.urgency_level) }} />
-                <span style={{ color: getUrgencyColor(advice.urgency_level) }}>SOURCING URGENCY: {advice.urgency_level}</span>
-              </div>
-              <p className="advice-text">{advice.recommendation}</p>
-              <div className="advice-metrics">
-                <div className="advice-metric">
-                  <span className="label">Projected Inventory</span>
-                  <span className={`value ${advice.projected_inventory <= 0 ? 'neg' : ''}`}>{advice.projected_inventory} units</span>
-                </div>
-                <div className="advice-metric">
-                  <span className="label">Replenishment Gap</span>
-                  <span className="value">{advice.shortage_quantity} units</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <h2 className="section-header" style={{ marginTop: '1.5rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <BarChart3 size={18} />
-            Strategic Supplier Ranking
-          </h2>
-
-          <div className="supplier-list">
-            {suppliers.map((s, idx) => (
-              <div key={s.id} className={`supplier-card supply-card ${idx === 0 ? 'top-rank' : ''}`}>
-                <div className="supplier-header">
-                  <div className="rank-indicator">RANK #{s.rank}</div>
-                  <div className="supplier-name-group">
-                    <span className="name">{s.name}</span>
-                    <span className="id">{s.id} • {s.location_hub}</span>
-                  </div>
-                  <div className="score-badge">
-                    <span className="label">DECISION SCORE</span>
-                    <span className="value">{s.decision_score.toFixed(2)}</span>
-                  </div>
-                </div>
-
-                <div className="supply-main-metrics v2">
-                  <div className="supply-metric main">
-                    <span className="label">UNIT COST</span>
-                    <span className="value">${s.unit_cost.toLocaleString()}</span>
-                  </div>
-                  <div className="supply-metric main">
-                    <span className="label">EFFECTIVE LEAD TIME</span>
-                    <span className={`value ${s.audit_trace.penalties.lead_time_impact > 0 ? 'warn' : ''}`}>
-                      {s.effective_lead_time} days
-                    </span>
-                  </div>
-                  <div className="supply-metric main">
-                    <span className="label">STABILITY INDEX</span>
-                    <span className="value">{s.audit_trace.effective_metrics.stability_index}%</span>
-                  </div>
-                </div>
-
-                <div className="audit-trace-panel mini">
-                  <div className="audit-header">
-                    <Activity size={12} />
-                    <span>DETERMINISTIC SCORING AUDIT</span>
-                  </div>
-                  <div className="audit-sections">
-                    <div className="audit-section">
-                      <span className="section-label">SCORE ATTRITION</span>
-                      <div className="audit-rows">
-                        <div className="audit-row"><span>Cost Efficiency</span> <span>{s.audit_trace.scores.cost}</span></div>
-                        <div className="audit-row"><span>Lead Time Index</span> <span>{s.audit_trace.scores.lead_time}</span></div>
-                        <div className="audit-row"><span>Historical Reliability</span> <span>{s.audit_trace.scores.reliability}</span></div>
-                      </div>
-                    </div>
-                    <div className="audit-section">
-                      <span className="section-label">DISRUPTION PENALTIES</span>
-                      <div className="audit-rows">
-                        <div className="audit-row"><span>Logistics Delay</span> <span className="warn">+{s.audit_trace.penalties.lead_time_impact}d</span></div>
-                        <div className="audit-row"><span>Risk Inflation</span> <span className="warn">+{s.audit_trace.penalties.risk_inflation}</span></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="supply-footer">
-                  <div className="decision-integrity-sash">
-                    <CheckCircle2 size={10} />
-                    <span>Integrity: {(s.decision_score * 100).toFixed(0)}% | DETERMINISTIC AUDIT TRACE VERIFIED</span>
-                  </div>
-                  <span>Mathematically Defensible Recommendation</span>
-                </div>
-              </div>
-            ))}
-          </div>
+        <div className="sc-input-group">
+          <label className="sc-label">Global Disruption</label>
+          <select value={scenario || ''} onChange={e => setScenario(e.target.value || null)} className="sc-select">
+            <option value="">Operational Normal</option>
+            {scenarios.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
         </div>
+      </div>
 
-        {/* Right Panel: Intelligence Logs */}
-        <div className="rr-disruption-panel supply-intel">
-          <h2 className="panel-title">Scoring Methodology</h2>
-          <div className="intel-section">
-            <div className="method-item">
-              <span className="label">Cost Weight</span>
-              <div className="progress-bar"><div className="fill" style={{ width: '30%' }}></div></div>
-              <span className="val">30%</span>
+      <div className="sc-results-grid" style={{gridTemplateColumns: '1fr 2fr'}}>
+        {/* Advice Card */}
+        {advice && (
+          <div className="sc-path-card" style={{borderColor: advice.urgency === 'CRITICAL' ? '#ef4444' : '#8b5cf6'}}>
+            <div className="sc-card-header" style={{background: advice.urgency === 'CRITICAL' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(139, 92, 246, 0.1)'}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: '8px', color: advice.urgency === 'CRITICAL' ? '#ef4444' : '#8b5cf6'}}>
+                <ShieldAlert size={20} />
+                <span style={{fontWeight: 800, fontSize: '12px'}}>{advice.urgency} STATUS</span>
+              </div>
             </div>
-            <div className="method-item">
-              <span className="label">Lead Time Weight</span>
-              <div className="progress-bar"><div className="fill" style={{ width: '30%' }}></div></div>
-              <span className="val">30%</span>
-            </div>
-            <div className="method-item">
-              <span className="label">Reliability Weight</span>
-              <div className="progress-bar"><div className="fill" style={{ width: '40%' }}></div></div>
-              <span className="val">40%</span>
+            <div className="sc-card-body">
+              <h3 style={{fontSize: '18px', fontWeight: 800, marginBottom: '1rem'}}>{advice.action}</h3>
+              <p style={{fontSize: '14px', color: '#94a3b8', lineHeight: 1.6}}>{advice.reasoning}</p>
             </div>
           </div>
+        )}
 
-          <div className="intel-section" style={{ marginTop: '2rem' }}>
-            <h3 className="section-title">Decision Audit Logs</h3>
-            <div className="intel-list">
-              <div className="intel-item">
-                <span>Deterministic Scoring</span>
-                <span className="risk-val success">VERIFIED</span>
-              </div>
-              <div className="intel-item">
-                <span>Scenario Delta Impact</span>
-                <span className="risk-val success">{scenario ? 'ACTIVE' : 'READY'}</span>
-              </div>
-              <div className="intel-item">
-                <span>Inventory Escalation</span>
-                <span className="risk-val success">MONITORING</span>
-              </div>
-            </div>
+        {/* Suppliers Table */}
+        <div className="sc-path-card">
+          <div className="sc-card-header">
+            <h3 style={{fontSize: '14px', fontWeight: 700}}>Qualified Global Suppliers</h3>
           </div>
-
-          <div className="intel-footer">
-            <Activity size={12} />
-            <span>Sourcing Decision Layer V1 Active</span>
+          <div style={{overflowX: 'auto'}}>
+            <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '13px'}}>
+              <thead>
+                <tr style={{borderBottom: '1px solid #1e293b', textAlign: 'left'}}>
+                  <th style={{padding: '16px', color: '#94a3b8'}}>Supplier</th>
+                  <th style={{padding: '16px', color: '#94a3b8'}}>Risk Score</th>
+                  <th style={{padding: '16px', color: '#94a3b8'}}>Base Lead Time</th>
+                  <th style={{padding: '16px', color: '#94a3b8'}}>Inventory</th>
+                </tr>
+              </thead>
+              <tbody>
+                {suppliers.map(s => (
+                  <tr key={s.id} style={{borderBottom: '1px solid #0f172a'}}>
+                    <td style={{padding: '16px'}}>
+                      <div style={{fontWeight: 700}}>{s.name}</div>
+                      <div style={{fontSize: '11px', color: '#64748b'}}>{s.location}</div>
+                    </td>
+                    <td style={{padding: '16px'}}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '6px', color: s.risk_score > 0.7 ? '#ef4444' : '#10b981'}}>
+                        <Activity size={14} /> {Math.round(s.risk_score * 100)}%
+                      </div>
+                    </td>
+                    <td style={{padding: '16px', fontFamily: 'JetBrains Mono'}}>{s.lead_time_days} days</td>
+                    <td style={{padding: '16px'}}>
+                       <div style={{height: '6px', width: '60px', background: '#1e293b', borderRadius: '3px', overflow: 'hidden'}}>
+                         <div style={{height: '100%', width: `${Math.min(100, s.inventory_level / 20)}%`, background: '#3b82f6'}}></div>
+                       </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
