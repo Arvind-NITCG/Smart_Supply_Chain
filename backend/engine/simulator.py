@@ -3,10 +3,12 @@ import pandas as pd
 from typing import List, Dict
 import networkx as nx
 from .graph_model import create_logistics_network
+from .weather_integration import WeatherProvider, DeterministicWeatherProvider
 
 class LogisticsSimulator:
-    def __init__(self, network: nx.DiGraph):
+    def __init__(self, network: nx.DiGraph, weather_provider: 'WeatherProvider' = None):
         self.network = network
+        self.weather_provider = weather_provider or DeterministicWeatherProvider()
         self.time_tick = 0  # 1 tick = 1 hour
         
         # Environmental state
@@ -34,25 +36,12 @@ class LogisticsSimulator:
                 base_backlog += random.uniform(0.1, 0.3)
             self.backlog_states[node] = min(1.0, base_backlog)
 
-        # Update Edge Weather & Traffic
+        # Update Edge Weather
+        self.weather_states = self.weather_provider.get_weather_states(self.network, self.weather_states)
+
+        # Update Traffic
         for u, v, data in self.network.edges(data=True):
             edge_key = (u, v)
-            region = data.get("region", "Unknown")
-            
-            # Weather logic (causal by region)
-            weather_risk = 0.05
-            if region == "Pacific_Northwest":
-                weather_risk = 0.3  # Rain
-            elif region == "Southeast":
-                weather_risk = 0.2  # Storms
-            elif region == "Midwest":
-                weather_risk = 0.15 # Snow/Wind
-            
-            # 10% chance of an event happening based on region risk
-            if random.random() < weather_risk:
-                self.weather_states[edge_key] = random.uniform(0.3, 1.0)
-            else:
-                self.weather_states[edge_key] = max(0.0, self.weather_states.get(edge_key, 0.0) - 0.1) # Decay
 
             # Traffic logic (causal by time of day)
             traffic_severity = random.uniform(0.0, 0.2)
