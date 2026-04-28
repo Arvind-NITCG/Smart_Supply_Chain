@@ -44,65 +44,115 @@ def load_canonical_hubs():
             return json.load(f)
     return []
 
+TRANSFER_PROFILES = {
+    "port_to_rail": {"delay": 8.0, "cost": 180, "risk": 0.05},
+    "road_to_air": {"delay": 6.0, "cost": 150, "risk": 0.02},
+    "road_to_sea": {"delay": 14.0, "cost": 250, "risk": 0.08},
+    "road_to_rail": {"delay": 4.0, "cost": 100, "risk": 0.03},
+    "rail_to_road": {"delay": 4.0, "cost": 80, "risk": 0.02},
+    "default": {"delay": 4.0, "cost": 100, "risk": 0.03}
+}
+
 def create_multimodal_network():
     """
-    Supplychainer Data-Driven Graph Construction.
-    Canonical Hubs Registry is the SINGLE SOURCE OF TRUTH for both Nodes and Edges.
+    Supplychainer Unified Multimodal Optimization Graph.
+    V3: Node Splitting Edition (The Forensic Fix).
     """
-    G = nx.MultiDiGraph()
+    G = nx.DiGraph()
     hubs = load_canonical_hubs()
     hub_lookup = {h["id"]: h for h in hubs}
 
-    # 1. Add Nodes
+    # 1. Add Mode-Specific Virtual Nodes
+    # Each hub H with modes M gets nodes H:m1, H:m2...
     for hub in hubs:
-        G.add_node(hub["id"],
-            display_name=hub["display_name"], type=hub["type"],
-            country=hub["country"], lat=hub["lat"], lon=hub["lon"],
-            importance=hub.get("importance", 5),
-            modes=hub["modes"])
+        hub_id = hub["id"]
+        for mode in hub["modes"]:
+            v_node = f"{hub_id}:{mode}"
+            G.add_node(v_node,
+                physical_id=hub_id,
+                display_name=hub["display_name"], 
+                type=hub["type"],
+                country=hub["country"], 
+                lat=hub["lat"], 
+                lon=hub["lon"],
+                importance=hub.get("importance", 5),
+                mode=mode, 
+                parent_city=hub.get("parent_city"))
 
-    # 2. Add Edges from Registry (Strategic Corridors)
+    # 2. Add Intra-Hub Transfer Edges (The Friction Layer)
     for hub in hubs:
-        u = hub["id"]
+        hub_id = hub["id"]
+        modes = hub["modes"]
+        for i, m1 in enumerate(modes):
+            for m2 in modes[i+1:]:
+                u, v = f"{hub_id}:{m1}", f"{hub_id}:{m2}"
+                
+                # Determine transfer profile
+                t_type = hub["type"]
+                profile_key = "default"
+                if t_type == "port" and (m1 == "rail" or m2 == "rail"): profile_key = "port_to_rail"
+                elif t_type == "airport" and (m1 == "road" or m2 == "road"): profile_key = "road_to_air"
+                elif t_type == "port" and (m1 == "road" or m2 == "road"): profile_key = "road_to_sea"
+                
+                profile = TRANSFER_PROFILES.get(profile_key, TRANSFER_PROFILES["default"])
+                
+                G.add_edge(u, v, baseline_time=profile["delay"], distance=0.1, 
+                           transport_mode="transfer", type="transfer", 
+                           cost=profile["cost"], risk=profile["risk"])
+                G.add_edge(v, u, baseline_time=profile["delay"], distance=0.1, 
+                           transport_mode="transfer", type="transfer", 
+                           cost=profile["cost"], risk=profile["risk"])
+
+    # 3. Add Strategic Intra-Mode Transit Edges
+    for hub in hubs:
+        u_base = hub["id"]
         for conn in hub.get("connections", []):
-            v = conn["to"]
+            v_base = conn["to"]
             mode = conn["mode"]
             
-            if v in hub_lookup:
-                h1, h2 = hub, hub_lookup[v]
+            u_vnode = f"{u_base}:{mode}"
+            v_vnode = f"{v_base}:{mode}"
+            
+            if G.has_node(u_vnode) and G.has_node(v_vnode):
+                h1, h2 = hub, hub_lookup[v_base]
                 dist = _haversine(h1["lat"], h1["lon"], h2["lat"], h2["lon"])
                 t = _travel_time(dist, mode)
-                if t < 0.5: t = 0.5
+                cost = dist * MODE_PROFILES[mode]["cost_per_km"]
                 
-                # Strategic edges are directional based on registry
-                G.add_edge(u, v, baseline_time=t, distance=round(dist, 1), transport_mode=mode, region="Strategic")
+                G.add_edge(u_vnode, v_vnode, baseline_time=t, distance=round(dist, 1), 
+                           transport_mode=mode, type="transit", cost=cost)
 
-    # 3. Auto-wire nearby hubs (<200km) for Local Road Connectivity
+    # 4. Local Road Auto-wire (<200km)
     for i, h1 in enumerate(hubs):
         if "road" not in h1["modes"]: continue
         for h2 in hubs[i+1:]:
             if "road" not in h2["modes"]: continue
             d = _haversine(h1["lat"], h1["lon"], h2["lat"], h2["lon"])
             if d < 200:
-                if not G.has_edge(h1["id"], h2["id"]):
+                u, v = f"{h1['id']}:road", f"{h2['id']}:road"
+                if G.has_node(u) and G.has_node(v) and not G.has_edge(u, v):
                     t = _travel_time(d, "road")
-                    G.add_edge(h1["id"], h2["id"], baseline_time=t, distance=round(d, 1), transport_mode="road", region="Local")
-                    G.add_edge(h2["id"], h1["id"], baseline_time=t, distance=round(d, 1), transport_mode="road", region="Local")
+                    cost = d * MODE_PROFILES["road"]["cost_per_km"]
+                    G.add_edge(u, v, baseline_time=t, distance=round(d, 1), 
+                               transport_mode="road", type="transit", cost=cost)
+                    G.add_edge(v, u, baseline_time=t, distance=round(d, 1), 
+                               transport_mode="road", type="transit", cost=cost)
 
-    print(f"Multimodal Network: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges (Data-Driven)")
+    print(f"Split-Node Multimodal Network: {G.number_of_nodes()} virtual nodes, {G.number_of_edges()} edges")
     return G
 
 def get_city_capabilities(G):
-    cities = []
+    city_data = {}
     for node, data in G.nodes(data=True):
-        modes = data.get("modes", [])
-        cities.append({
-            "id": node, 
-            "display_name": data.get("display_name"),
-            "type": data.get("type"), 
-            "country": data.get("country"),
-            "has_port": "sea" in modes, 
-            "has_airport": "air" in modes,
-            "has_rail": "rail" in modes
-        })
-    return sorted(cities, key=lambda c: c["display_name"])
+        city = data.get("parent_city", data.get("display_name"))
+        if city not in city_data:
+            city_data[city] = {"id": data.get("physical_id"), "display_name": city, "country": data.get("country"), 
+                               "has_port": False, "has_airport": False, "has_rail": False, "nodes": []}
+        
+        city_data[city]["nodes"].append(node)
+        mode = data.get("mode")
+        if mode == "sea": city_data[city]["has_port"] = True
+        if mode == "air": city_data[city]["has_airport"] = True
+        if mode == "rail": city_data[city]["has_rail"] = True
+
+    return sorted(list(city_data.values()), key=lambda c: c["display_name"])

@@ -37,6 +37,24 @@
     "road": "HUB-ROTTERDAM",
     "rail": "RAIL-ROTTERDAM"
   },
+  "London": {
+    "air": "AIR-HEATHROW",
+    "road": "AIR-HEATHROW",
+    "rail": "AIR-HEATHROW"
+  },
+  "Chicago": {
+    "air": "AIR-CHICAGO",
+    "rail": "RAIL-CHICAGO",
+    "road": "RAIL-CHICAGO"
+  },
+  "San Francisco": {
+    "air": "AIR-SFO",
+    "road": "HUB-SFO"
+  },
+  "Kolkata": {
+    "rail": "RAIL-KOLKATA",
+    "road": "RAIL-KOLKATA"
+  },
   "Hamburg": {
     "sea": "PORT-HAMBURG",
     "rail": "RAIL-HAMBURG",
