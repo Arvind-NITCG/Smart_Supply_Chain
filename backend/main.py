@@ -7,6 +7,7 @@ import random
 import os
 from contextlib import asynccontextmanager
 
+from fastapi.middleware.cors import CORSMiddleware
 from .engine.graph_model import create_logistics_network
 from .engine.simulator import LogisticsSimulator
 from .engine.threat_intelligence import ThreatIntelligencePredictor
@@ -58,6 +59,14 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="Smart Supply Chain API", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/api/scenarios")
 def get_scenarios():

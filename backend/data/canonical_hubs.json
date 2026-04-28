@@ -1,5 +1,53 @@
 [
   {
+    "id": "AIR-SFO",
+    "display_name": "San Francisco International Airport",
+    "aliases": ["SFO"],
+    "type": "airport",
+    "modes": ["air", "road"],
+    "lat": 37.6213,
+    "lon": -122.3790,
+    "country": "USA",
+    "parent_city": "San Francisco",
+    "importance": 9,
+    "connections": [
+      {"to": "AIR-CHANGI", "mode": "air"},
+      {"to": "AIR-NARITA", "mode": "air"},
+      {"to": "HUB-SFO", "mode": "road"}
+    ]
+  },
+  {
+    "id": "HUB-SFO",
+    "display_name": "San Francisco Logistics Park",
+    "aliases": ["SF Hub"],
+    "type": "distribution_hub",
+    "modes": ["road"],
+    "lat": 37.7749,
+    "lon": -122.4194,
+    "country": "USA",
+    "parent_city": "San Francisco",
+    "importance": 7,
+    "connections": [
+      {"to": "HUB-LOSANGELES", "mode": "road"}
+    ]
+  },
+  {
+    "id": "HUB-CHICAGO",
+    "display_name": "Chicago Strategic DC",
+    "aliases": ["ORD Hub"],
+    "type": "distribution_hub",
+    "modes": ["road"],
+    "lat": 41.8781,
+    "lon": -87.6298,
+    "country": "USA",
+    "parent_city": "Chicago",
+    "importance": 8,
+    "connections": [
+      {"to": "AIR-CHICAGO", "mode": "road"},
+      {"to": "RAIL-CHICAGO", "mode": "road"}
+    ]
+  },
+  {
     "id": "CHOKE-SUEZ",
     "display_name": "Suez Canal",
     "aliases": [
